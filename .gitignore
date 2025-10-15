@@ -1,0 +1,45 @@
+# === Build outputs ===
+/dist
+/tmp
+/out-tsc
+/bazel-out
+
+# === Angular cache ===
+/.angular/cache
+
+# === Dependencies ===
+/node_modules
+
+# === Profiling ===
+chrome-profiler-events*.json
+
+# === IDEs & Editors ===
+/.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# === Misc / caches ===
+.sass-cache/
+.cache/
+.history/*
+connect.lock
+coverage/
+testem.log
+libpeerconnection.log
+
+# === Logs ===
+npm-debug.log*
+yarn-error.log*
+
+# === System files ===
+.DS_Store
+Thumbs.db
