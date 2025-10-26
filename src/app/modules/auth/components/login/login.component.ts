@@ -14,8 +14,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 export class LoginComponent implements OnInit, OnDestroy {
   // KeenThemes mock, change it to:
   defaultAuth: any = {
-    email: 'admin@demo.com',
-    password: 'demo',
+    email: 'admin@example.com',
+    password: 'Admin1234!',
   };
   loginForm: FormGroup;
   hasError: boolean;
@@ -77,9 +77,10 @@ export class LoginComponent implements OnInit, OnDestroy {
     const loginSubscr = this.authService
       .login(this.f.email.value, this.f.password.value)
       .pipe(first())
-      .subscribe((user: UserModel | undefined) => {
+      .subscribe((user: any) => {
         if (user) {
-          this.router.navigate([this.returnUrl]);
+          //this.router.navigate([this.returnUrl]);
+          document.location.reload();
         } else {
           this.hasError = true;
         }
