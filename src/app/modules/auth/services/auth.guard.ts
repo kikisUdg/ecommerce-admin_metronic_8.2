@@ -1,22 +1,33 @@
 import { Injectable } from '@angular/core';
-import { ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
-import { AuthService } from './auth.service';
+import { CanActivate, Router, UrlTree } from '@angular/router';
+import { TokenStorageService } from './token-storage.service';
 
 @Injectable({ providedIn: 'root' })
-export class AuthGuard  {
-  constructor(private authService: AuthService) {}
+export class AuthGuard implements CanActivate {
+  constructor(
+    private router: Router,
+    private tokenStore: TokenStorageService
+  ) {}
 
-  canActivate(route: ActivatedRouteSnapshot, state: RouterStateSnapshot) {
-   if(!this.authService.user || !this.authService.token){
-    this.authService.logout();
-    return false;
-   }
-   let token = this.authService.token;
-   let expiration = (JSON.parse(atob(token.split(".")[1]))).exp;
-   if(Math.floor((new Date().getTime()/1000))>= expiration){
-      this.authService.logout();
-      return false;
-   }
-   return true;
+  canActivate(): boolean | UrlTree {
+    const token = this.tokenStore.getToken();
+
+    // Si no hay token, solo redirige (NO limpiar sesión aquí)
+    if (!token) {
+      return this.router.createUrlTree(['/auth/login']);
+    }
+
+    // Si el token está expirado, redirige (el interceptor decidirá si refresca o no)
+    try {
+      if (this.tokenStore.isExpired()) {
+        return this.router.createUrlTree(['/auth/login']);
+      }
+    } catch {
+      // Si por alguna razón falla el parse del JWT, trata como no autorizado
+      return this.router.createUrlTree(['/auth/login']);
+    }
+
+    // Autorizado
+    return true;
   }
 }

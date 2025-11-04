@@ -8,6 +8,8 @@ import { environment } from 'src/environments/environment';
 import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { URL_SERVICIOS } from 'src/app/config/config';
+import { TokenStorageService } from './token-storage.service';
+
 
 export type UserType = UserModel | undefined;
 
@@ -41,6 +43,7 @@ export class AuthService implements OnDestroy {
     private authHttpService: AuthHTTPService,
     private router: Router,
     private http: HttpClient,
+    private tokenStore: TokenStorageService
   ) {
     this.isLoadingSubject = new BehaviorSubject<boolean>(false);
     this.currentUserSubject = new BehaviorSubject<UserType>(undefined);
@@ -51,48 +54,85 @@ export class AuthService implements OnDestroy {
   }
 
   // public methods
-  login(email: string, password: string): Observable<any> {
-    this.isLoadingSubject.next(true);
-    return this.http.post(URL_SERVICIOS+"/auth/login",{email, password}).pipe(
-      map((auth: any) => {
-        const result = this.setAuthFromLocalStorage(auth);
-        return result;
-      }),
-      catchError((err) => {
-        console.error('err', err);
-        return of(undefined);
-      }),
-      finalize(() => this.isLoadingSubject.next(false))
-    );
-  }
+// Devuelve el token guardado por tu login()
+getToken(): string | null {
+  return this.tokenStore.getToken();
+}
+
+// (Opcional) Pega la info del usuario desde backend
+me(): Observable<any> {
+  return this.http.get(`${URL_SERVICIOS}/auth/me`).pipe(
+    map((user: any) => {
+      if (user) this.currentUserSubject.next(user);
+      return user;
+    }),
+    catchError(() => of(undefined))
+  );
+}
+
+// Renovación de token (usado por el interceptor en 401)
+refresh(): Observable<any> {
+  return this.http.post(`${URL_SERVICIOS}/auth/refresh`, {}).pipe(
+    map((res: any) => {
+      if (res?.access_token) {
+        this.tokenStore.setToken(res.access_token);
+      }
+      return res;
+    })
+  );
+}
+
+// (Opcional) Golpea /logout del backend y luego limpia local
+logoutApi(): Observable<any> {
+  return this.http.post(`${URL_SERVICIOS}/auth/logout`, {}).pipe(
+    finalize(() => this.logout())
+  );
+}
+
+login(email: string, password: string): Observable<any> {
+  this.isLoadingSubject.next(true);
+  return this.http.post(`${URL_SERVICIOS}/auth/login`, { email, password }).pipe(
+    map((auth: any) => {
+
+      console.log('[DEBUG] respuesta backend', auth);
+      const result = this.setAuthFromLocalStorage(auth); // ② segundo breakpoint aquí
+      console.log('[DEBUG] resultado guardado', result);
+
+      this.setAuthFromLocalStorage(auth);
+      if (auth?.user) this.currentUserSubject.next(auth.user);
+      return auth;
+    }),
+    catchError((err) => {
+      console.error('login error', err);
+      return of(undefined);
+    }),
+    finalize(() => this.isLoadingSubject.next(false))
+  );
+}
 
   logout() {
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    this.router.navigate(['/auth/login'], {
-      queryParams: {},
-    });
+    this.tokenStore.clear();
+    this.router.navigate(['/auth/login'], { queryParams: {} });
   }
 
-  getUserByToken(): Observable<any> {
-    const auth = this.getAuthFromLocalStorage();
-    if (!auth) {
+ getUserByToken(): Observable<any> {
+  const token = this.tokenStore.getToken();
+  if (!token) return of(undefined);
+
+  this.isLoadingSubject.next(true);
+  return this.http.get(`${URL_SERVICIOS}/auth/me`).pipe(
+    map((user: any) => {
+      if (user) this.currentUserSubject.next(user);
+      return user;
+    }),
+    catchError(err => {
+      console.warn('[me] falló, no limpio sesión', err);
+      // ⚠️ No llamar this.logout() aquí
       return of(undefined);
-    }
-
-    this.isLoadingSubject.next(true);
-    return of(auth).pipe(
-      map((user: any) => {
-        if (user) {
-          this.currentUserSubject.next(user);
-        } else {
-          this.logout();
-        }
-        return user;
-      }),
-      finalize(() => this.isLoadingSubject.next(false))
-    );
-  }
+    }),
+    finalize(() => this.isLoadingSubject.next(false))
+  );
+}
 
   // need create new user then login
   registration(user: UserModel): Observable<any> {
@@ -118,32 +158,29 @@ export class AuthService implements OnDestroy {
   }
 
   // private methods
-  private setAuthFromLocalStorage(auth: any): boolean {
-    // store auth authToken/refreshToken/epiresIn in local storage to keep user logged in between page refreshes
-    if (auth && auth.access_token) {
-      localStorage.setItem('user', JSON.stringify(auth.user));
-      localStorage.setItem('token', auth.access_token);
-      return true;
-    }
-    return false;
+private setAuthFromLocalStorage(auth: any): boolean {
+  if (auth && auth.access_token) {                  // ✅ tus claves coinciden con Postman
+    this.tokenStore.setUser(auth.user);            // { name, email }
+    this.tokenStore.setToken(auth.access_token);   // guarda token y exp (si viene en JWT)
+    return true;
   }
+  return false;
+}
 
-  private getAuthFromLocalStorage(): any | undefined {
-    try {
-      const lsValue = localStorage.getItem("user");
-      if (!lsValue) {
-        return undefined;
-      }
+private getAuthFromLocalStorage(): any | undefined {
+  try {
+    const user = this.tokenStore.getUser();
+    if (!user) return undefined;
 
-      this.token = localStorage.getItem("token"),
-      this.user = JSON.parse(lsValue);
-      const authData =  this.user;
-      return authData;
-    } catch (error) {
-      console.error(error);
-      return undefined;
-    }
+    this.user = user;
+    this.token = this.tokenStore.getToken();
+    return user;
+  } catch (error) {
+    console.error(error);
+    return undefined;
   }
+}
+
 
   ngOnDestroy() {
     this.unsubscribe.forEach((sb) => sb.unsubscribe());
